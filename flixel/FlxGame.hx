@@ -105,7 +105,7 @@ class FlxGame extends Sprite
 	/**
 	 * Total number of milliseconds elapsed since game start.
 	 */
-	var _total:Int = 0;
+	var _total:Float = 0;
 
 	/**
 	 * Time stamp of game startup. Needed on JS where `Lib.getTimer()`
@@ -409,7 +409,14 @@ class FlxGame extends Sprite
 			FlxG.log.warn("FlxG.updateFramerate: The update framerate shouldn't be smaller" + " than the draw framerate, since it can slow down your game.");
 
 		// Finally, set up an event for the actual game loop stuff.
-		stage.addEventListener(Event.ENTER_FRAME, onEnterFrame);
+		#if flash
+		stage.addEventListener(Event.ENTER_FRAME, function(_)
+		{
+			ticks = getTicks();
+			__enterFrame(ticks - _total);
+			_total = ticks;
+		});
+		#end
 
 		// We need to listen for resize event which means new context
 		// it means that we need to recreate BitmapDatas of dumped tilesheets
@@ -546,15 +553,15 @@ class FlxGame extends Sprite
 	/**
 	 * Handles the `onEnterFrame` call and figures out how many updates and draw calls to do.
 	 */
-	function onEnterFrame(_):Void
+	@:noCompletion private #if !flash override #end function __enterFrame(deltaTime:Float):Void
 	{
+		#if !flash
 		ticks = getTicks();
-		_elapsedMS = ticks - _total;
-		_total = ticks;
+		#end
 
 		#if FLX_SOUND_TRAY
 		if (soundTray != null && soundTray.active)
-			soundTray.update(_elapsedMS);
+			soundTray.update(deltaTime);
 		#end
 
 		if (!_lostFocus || !FlxG.autoPause)
@@ -583,18 +590,18 @@ class FlxGame extends Sprite
 
 			if (FlxG.fixedTimestep)
 			{
-				_accumulator += _elapsedMS;
+				_accumulator += deltaTime;
 				_accumulator = (_accumulator > _maxAccumulation) ? _maxAccumulation : _accumulator;
 
 				while (_accumulator >= _stepMS)
 				{
-					step();
+					step(_stepMS);
 					_accumulator -= _stepMS;
 				}
 			}
 			else
 			{
-				step();
+				step(deltaTime);
 			}
 
 			#if FLX_DEBUG
@@ -608,6 +615,10 @@ class FlxGame extends Sprite
 			debugger.update();
 			#end
 		}
+
+		#if !flash
+		super.__enterFrame(deltaTime);
+		#end
 	}
 
 	/**
@@ -703,7 +714,7 @@ class FlxGame extends Sprite
 	 * the appropriate number of times each frame.
 	 * This block handles state changes, replays, all that good stuff.
 	 */
-	function step():Void
+	function step(deltaTime:Float):Void
 	{
 		// Handle game reset request
 		if (_resetGame)
@@ -719,7 +730,7 @@ class FlxGame extends Sprite
 		FlxBasic.activeCount = 0;
 		#end
 
-		update();
+		update(deltaTime);
 
 		#if FLX_DEBUG
 		debugger.stats.activeObjects(FlxBasic.activeCount);
@@ -760,7 +771,7 @@ class FlxGame extends Sprite
 	 * This function is called by `step()` and updates the actual game state.
 	 * May be called multiple times per "frame" or draw call.
 	 */
-	function update():Void
+	function update(deltaTime:Float):Void
 	{
 		if (!_state.active || !_state.exists)
 			return;
@@ -773,9 +784,9 @@ class FlxGame extends Sprite
 			ticks = getTicks();
 		#end
 
-		updateElapsed();
+		updateElapsed(deltaTime);
 
-		updateInput();
+		updateInput(deltaTime);
 
 		// This caused issues if it was before `updateInput`.. so uh yeah FINALLY I FIXED A BUG THATS BEEN IN CNE FOR LIKE YEARS :SOB: - LJ
 		FlxG.signals.preUpdate.dispatch();
@@ -806,24 +817,16 @@ class FlxGame extends Sprite
 		filters = filtersEnabled ? _filters : null;
 	}
 
-	function updateElapsed():Void
+	function updateElapsed(deltaTime:Float):Void
 	{
-		if (FlxG.fixedTimestep)
-		{
-			FlxG.elapsed = FlxG.timeScale * _stepSeconds; // fixed timestep
-			FlxG.rawElapsed = _stepSeconds;
-		}
-		else
-		{
-			FlxG.rawElapsed = _elapsedMS / 1000; // variable timestep
-			if (FlxG.rawElapsed > FlxG.maxElapsed)
-				FlxG.rawElapsed = FlxG.maxElapsed;
+		FlxG.rawElapsed = deltaTime / 1000;
+		if (FlxG.rawElapsed > FlxG.maxElapsed)
+			FlxG.rawElapsed = FlxG.maxElapsed;
 
-			FlxG.elapsed = FlxG.timeScale * FlxG.rawElapsed;
-		}
+		FlxG.elapsed = FlxG.timeScale * FlxG.rawElapsed;
 	}
 
-	function updateInput():Void
+	function updateInput(deltaTime:Float):Void
 	{
 		#if FLX_RECORD
 		if (replaying)
@@ -832,7 +835,7 @@ class FlxGame extends Sprite
 
 			if (FlxG.vcr.timeout > 0)
 			{
-				FlxG.vcr.timeout -= _stepMS;
+				FlxG.vcr.timeout -= deltaTime;
 
 				if (FlxG.vcr.timeout <= 0)
 				{
